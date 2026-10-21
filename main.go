@@ -1,13 +1,17 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"net"
+	"time"
 )
 
 var (
-	PORT = ":8080"
-	MODE = false
+	PORT       = ":8080"
+	MODE       = false
+	TIMEWINDOW = 2
+	MSGLIMIT   = 8
 )
 
 func safeRemoteAddr(conn net.Conn) string {
@@ -32,34 +36,78 @@ type Message struct {
 	Text        string
 }
 
+type Client struct {
+	Conn        net.Conn
+	LastMessage time.Time
+	StrikCount  int
+}
+
 func server(message chan Message) {
-	conns := map[string]net.Conn{}
+	// conns := map[string]net.Conn{}
+	clients := map[string]Client{}
 	for {
 		msg := <-message
 		switch msg.MessageType {
 		case NewConnection:
-			conns[msg.Conn.RemoteAddr().String()] = msg.Conn
+			log.Printf("来自%s的新连接!", safeRemoteAddr(msg.Conn))
+			// conns[msg.Conn.RemoteAddr().String()] = msg.Conn
+			clients[msg.Conn.RemoteAddr().String()] = Client{
+				Conn: msg.Conn,
+			}
 			// log.Println(conns)
 		case NewMessage:
-			go func() {
-				// log.Println(msg.Text)
-				for key, conn := range conns {
-					if key == msg.Conn.RemoteAddr().String() {
-						continue
+			// 消息限流
+			now := time.Now()
+			addr := msg.Conn.RemoteAddr().String()
+			if now.Sub(clients[addr].LastMessage).Seconds() >= float64(TIMEWINDOW) {
+				go func() {
+					log.Printf("来自%s的新消息:%s", safeRemoteAddr(msg.Conn), msg.Text)
+					// log.Println(msg.Text)
+					newClient := Client{
+						Conn:        msg.Conn,
+						LastMessage: now,
+						StrikCount:  0,
 					}
-					n, err := conn.Write([]byte(msg.Text))
+					clients[addr] = newClient
+					for key, client := range clients {
+						log.Printf("向%s发送消息", key)
+						if key == msg.Conn.RemoteAddr().String() {
+							continue
+						}
+						n, err := client.Conn.Write([]byte(msg.Text))
+						if err != nil {
+							log.Printf("向客户端发送消息失败:%s", err)
+							return
+						}
+						if n < len(msg.Text) {
+							log.Println("向客户端发送消息时出现错误")
+							return
+						}
+					}
+				}()
+			} else {
+				// 当前时间距离上次发消息间隔不足两秒，直接拒绝
+				clientInfo := clients[addr]
+				if clientInfo.StrikCount%3 == 0 {
+					msg := fmt.Sprintf("服务器规定在%d秒内只允许发送不超过%d条消息!", TIMEWINDOW, MSGLIMIT)
+					_, err := clientInfo.Conn.Write([]byte(msg))
 					if err != nil {
-						log.Printf("向客户端发送消息失败:%s", err)
-						return
-					}
-					if n < len(msg.Text) {
-						log.Println("向客户端发送消息时出现错误")
+						log.Println("向客户端发送消息时出错")
 						return
 					}
 				}
-			}()
+				clientInfo.StrikCount++
+				if clientInfo.StrikCount == 0 || clientInfo.StrikCount >= 8 {
+					// 攻击服务器大于两秒八次直接草飞
+					clientInfo.Conn.Write([]byte("请停止攻击服务器!"))
+					clientInfo.Conn.Close()
+				}
+				clients[addr] = clientInfo
+			}
 		case Delete:
-			delete(conns, msg.Conn.RemoteAddr().String())
+			log.Printf("%s失去连接", safeRemoteAddr(msg.Conn))
+			// delete(conns, msg.Conn.RemoteAddr().String())
+			delete(clients, msg.Conn.RemoteAddr().String())
 			msg.Conn.Close()
 		}
 	}
@@ -81,7 +129,7 @@ func welcome(conn net.Conn) {
 
 func client(conn net.Conn, messages chan Message) {
 	welcome(conn)
-	readBuff := make([]byte, 4096)
+	readBuff := make([]byte, 128)
 	for {
 		n, err := conn.Read(readBuff)
 		if err != nil {
@@ -91,6 +139,7 @@ func client(conn net.Conn, messages chan Message) {
 				Conn:        conn,
 			}
 			messages <- newMsg
+			return
 		} else {
 			newMsg := Message{
 				MessageType: NewMessage,
