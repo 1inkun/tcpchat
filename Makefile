@@ -1,3 +1,4 @@
+MAIN = cmd/main
 .PHONY: help dev build clean
 
 help:
@@ -6,13 +7,12 @@ help:
 
 dev:
 	@go fmt ./
-	@go run ./main.go
+	@go run $(MAIN)/main.go
 
 build:
 	@go fmt ./
 	@go vet ./
-	@go build main.go
+	@go build $(MAIN)/main.go
 
 clean:
 	@rm -rf main
-	
