@@ -20,10 +20,12 @@ func Server(message chan models.Message, cfg config.Config) {
 			log.Printf("来自%s的新连接!", utils.SensMsg(msg.Conn, cfg))
 			// conns[msg.Conn.RemoteAddr().String()] = msg.Conn
 			clients[msg.Conn.RemoteAddr().String()] = models.Client{
-				Conn: msg.Conn,
+				Conn:     msg.Conn,
+				Username: msg.Username,
 			}
-			text := fmt.Sprintf("当前在线人数: %d 人", len(clients))
+			text := fmt.Sprintf("当前在线人数: %d 人\n", len(clients))
 			msg.Conn.Write([]byte(text))
+			// TODO: 同名用户登录挤下线
 			// TODO: 新用户同步聊天记录
 		case models.NewMessage:
 			// 消息限流
@@ -36,17 +38,19 @@ func Server(message chan models.Message, cfg config.Config) {
 					Conn:        msg.Conn,
 					LastMessage: now,
 					StrikCount:  0,
+					Username:    msg.Username,
 				}
 				clients[addr] = newClient
-				// TODO: 格式化消息
+				// 格式化消息
+				text := fmt.Sprintf("%s %s: %s\n", now.Format("2006-01-02 15:04:05"), msg.Username, msg.Text)
 				// 使用协程遍历当前已连接用户列表
 				go func() {
 					for key, client := range clients {
-						log.Printf("向%s发送消息", key)
+						// log.Printf("向%s发送消息", key)
 						if key == msg.Conn.RemoteAddr().String() {
 							continue
 						}
-						n, err := client.Conn.Write([]byte(msg.Text))
+						n, err := client.Conn.Write([]byte(text))
 						if err != nil {
 							log.Printf("向客户端发送消息失败:%s", err)
 							return

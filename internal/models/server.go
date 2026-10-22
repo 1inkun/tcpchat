@@ -17,10 +17,12 @@ type Message struct {
 	MessageType MessageType
 	Conn        net.Conn
 	Text        string
+	Username    string
 }
 
 type Client struct {
 	Conn        net.Conn
+	Username    string
 	LastMessage time.Time
 	StrikCount  int
 }

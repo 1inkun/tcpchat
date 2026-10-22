@@ -9,7 +9,22 @@ import (
 	"github.com/1inkun/tcpchat/internal/utils"
 )
 
-func Client(conn net.Conn, messages chan models.Message, cfg config.Config) {
+func Client(conn net.Conn, messages chan models.Message, cfg config.Config, auth AuthHandler) {
+	// 先检查授权状态
+	username, ok := auth.Auth(conn)
+	if !ok {
+		// 未通过授权直接断开连接
+		log.Printf("%s 未通过授权", utils.SensMsg(conn, cfg))
+		conn.Close()
+		return
+	} else {
+		newMsg := models.Message{
+			MessageType: models.NewConnection,
+			Conn:        conn,
+			Username:    username,
+		}
+		messages <- newMsg
+	}
 	utils.Welcome(conn, cfg)
 	readBuff := make([]byte, 128)
 	for {
@@ -27,6 +42,7 @@ func Client(conn net.Conn, messages chan models.Message, cfg config.Config) {
 				MessageType: models.NewMessage,
 				Text:        string(readBuff[0:n]),
 				Conn:        conn,
+				Username:    username,
 			}
 			messages <- newMsg
 		}
