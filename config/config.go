@@ -9,6 +9,7 @@ import (
 
 type Config struct {
 	Server ServerConfig `yaml:"Server"`
+	Redis  RedisConfig  `yaml:"Redis"`
 }
 
 type ServerConfig struct {
@@ -16,6 +17,12 @@ type ServerConfig struct {
 	SAFEMODE   bool   `yaml:"Safemode"`
 	TIMEWINDOW int    `yaml:"TimeWindow"`
 	MSGLIMIT   int    `yaml:"MsgLimit"`
+	TIMEOUT    int    `yaml:"Timeout"`
+}
+
+type RedisConfig struct {
+	Addr     string `yaml:"Addr"`
+	Password string `yaml:"Password"`
 }
 
 func InitConfig() *Config {
@@ -41,5 +48,8 @@ func defaultSetting(cfg Config) Config {
 	cfg.Server.SAFEMODE = true
 	cfg.Server.TIMEWINDOW = 2
 	cfg.Server.MSGLIMIT = 8
+	cfg.Server.TIMEOUT = 2
+	cfg.Redis.Addr = "localhost:6379"
+	cfg.Redis.Password = "a123456"
 	return cfg
 }

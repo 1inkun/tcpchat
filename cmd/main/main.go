@@ -45,6 +45,7 @@ func main() {
 		if err != nil {
 			log.Fatalf("服务器连接处理失败:%s", err)
 		}
+		// 使用上下文包装conn
 		go handler.Client(conn, messages, *cfg, *authHandler)
 	}
 }

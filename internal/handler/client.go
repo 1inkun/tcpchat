@@ -25,7 +25,6 @@ func Client(conn net.Conn, messages chan models.Message, cfg config.Config, auth
 		}
 		messages <- newMsg
 	}
-	utils.Welcome(conn, cfg)
 	readBuff := make([]byte, 128)
 	for {
 		n, err := conn.Read(readBuff)

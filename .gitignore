@@ -37,3 +37,4 @@ config.yaml
 
 # Data
 data.db
+deployments/data

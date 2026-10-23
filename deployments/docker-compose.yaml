@@ -1,31 +1,10 @@
-version: '3.8'
-
 services:
   redis:
     image: redis:8.2.1-alpine
-    container_name: redis
+    container_name: redis-tcpchat
     restart: unless-stopped
     ports:
-      # 仅本机访问；如需局域网访问改为 "6379:6379"
       - "6789:6379"
-    environment:
-      - TZ=Asia/Shanghai
-      - REDIS_PASSWORD=admin123
     volumes:
       - ./data:/data
-    command: >
-      sh -c 'exec redis-server --requirepass "$$REDIS_PASSWORD"'
-    healthcheck:
-      test: ["CMD-SHELL", "redis-cli --no-auth-warning -a \"$$REDIS_PASSWORD\" ping | grep -q PONG"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 10s
-    networks:
-      - redis-net
-    sysctls:
-      - net.core.somaxconn=512
-
-networks:
-  redis-net:
-    driver: bridge
+    command: redis-server --requirepass a123456 --appendonly yes

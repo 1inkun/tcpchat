@@ -19,13 +19,23 @@ func Server(message chan models.Message, cfg config.Config) {
 		case models.NewConnection:
 			log.Printf("来自%s的新连接!", utils.SensMsg(msg.Conn, cfg))
 			// conns[msg.Conn.RemoteAddr().String()] = msg.Conn
+			// 同名用户登录挤下线
+			for k, v := range clients {
+				if v.Username == msg.Username {
+					v.Conn.Write([]byte("当前账户已在其他地方登录\n"))
+					v.Conn.Close()
+					// 挤下线后在clients列表中删除
+					delete(clients, k)
+					break
+				}
+			}
 			clients[msg.Conn.RemoteAddr().String()] = models.Client{
 				Conn:     msg.Conn,
 				Username: msg.Username,
 			}
+			utils.Welcome(msg.Conn, cfg)
 			text := fmt.Sprintf("当前在线人数: %d 人\n", len(clients))
 			msg.Conn.Write([]byte(text))
-			// TODO: 同名用户登录挤下线
 			// TODO: 新用户同步聊天记录
 		case models.NewMessage:
 			// 消息限流
