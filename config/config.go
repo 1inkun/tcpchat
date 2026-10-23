@@ -18,6 +18,7 @@ type ServerConfig struct {
 	TIMEWINDOW int    `yaml:"TimeWindow"`
 	MSGLIMIT   int    `yaml:"MsgLimit"`
 	TIMEOUT    int    `yaml:"Timeout"`
+	BANTIME    int    `yaml:"BanTime"`
 }
 
 type RedisConfig struct {
@@ -51,5 +52,6 @@ func defaultSetting(cfg Config) Config {
 	cfg.Server.TIMEOUT = 2
 	cfg.Redis.Addr = "localhost:6379"
 	cfg.Redis.Password = "a123456"
+	cfg.Server.BANTIME = 3
 	return cfg
 }

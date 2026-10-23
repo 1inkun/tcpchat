@@ -1,10 +1,14 @@
 package handler
 
 import (
+	"context"
 	"database/sql"
+	"fmt"
 	"log"
 	"net"
+	"time"
 
+	"github.com/1inkun/tcpchat/config"
 	"github.com/1inkun/tcpchat/internal/models"
 	"github.com/1inkun/tcpchat/internal/utils"
 	"github.com/redis/go-redis/v9"
@@ -22,7 +26,7 @@ func NewAuthHandler(rdb *redis.Client, db *sql.DB) *AuthHandler {
 	}
 }
 
-func (h *AuthHandler) Auth(conn net.Conn) (string, bool) {
+func (h *AuthHandler) Auth(conn net.Conn, ban BanHandler, cfg config.Config) (string, bool) {
 	msg := `请完成授权操作!
 输入!reg跳转注册
 输入!log跳转登录
@@ -49,9 +53,9 @@ func (h *AuthHandler) Auth(conn net.Conn) (string, bool) {
 			log.Println(cmd)
 			switch cmd {
 			case "reg":
-				return h.register(conn)
+				return h.register(conn, cfg)
 			case "log":
-				return h.login(conn)
+				return h.login(conn, cfg)
 			case "ext":
 				return "", false
 			default:
@@ -62,12 +66,17 @@ func (h *AuthHandler) Auth(conn net.Conn) (string, bool) {
 		}
 		if attackCount >= 5 {
 			conn.Write([]byte("短时间内请求过多!\n"))
+			if banTime, ok := ban.GetBaned(conn, cfg); ok {
+				resp := fmt.Sprintf("当前IP已被封禁! 将于%s解封!\n", banTime)
+				conn.Write([]byte(resp))
+				return "", false
+			}
 			return "", false
 		}
 	}
 }
 
-func (h *AuthHandler) login(conn net.Conn) (string, bool) {
+func (h *AuthHandler) login(conn net.Conn, cfg config.Config) (string, bool) {
 	var LoginInfo models.LoginInfo
 	buffer := make([]byte, 32)
 	msg := "请输入登录信息\n"
@@ -94,9 +103,12 @@ func (h *AuthHandler) login(conn net.Conn) (string, bool) {
 
 	// 登录逻辑
 	// log.Println(LoginInfo)
+	// 为数据库查询派生一个超时上下文
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*time.Duration(cfg.Server.TIMEOUT))
+	defer cancel()
 	var passwordHash string
 	query := "SELECT password FROM user WHERE username = ?;"
-	row := h.db.QueryRow(query, LoginInfo.Username)
+	row := h.db.QueryRowContext(ctx, query, LoginInfo.Username)
 	if row.Err() != nil {
 		log.Printf("在登录时查询数据库出现错误:%s", row.Err())
 		return "", false
@@ -112,7 +124,7 @@ func (h *AuthHandler) login(conn net.Conn) (string, bool) {
 	// 登录成功返回用户名
 	return LoginInfo.Username, true
 }
-func (h *AuthHandler) register(conn net.Conn) (string, bool) {
+func (h *AuthHandler) register(conn net.Conn, cfg config.Config) (string, bool) {
 	var regInfo models.RegisterInfo
 	buffer := make([]byte, 32)
 	msg := "请输入注册信息\n"
@@ -155,10 +167,13 @@ func (h *AuthHandler) register(conn net.Conn) (string, bool) {
 	}
 	// 根据信息进行注册操作
 	// log.Println(regInfo)
+	// 为数据库查询派生一个超时上下文
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*time.Duration(cfg.Server.TIMEOUT))
+	defer cancel()
 	// 检查用户名是否已被注册
 	var userId int64
 	query := "SELECT id FROM user WHERE username = ?;"
-	row := h.db.QueryRow(query, regInfo.Username)
+	row := h.db.QueryRowContext(ctx, query, regInfo.Username)
 	if row.Err() != nil {
 		log.Printf("在查询数据库时出现错误:%s", row.Err())
 		return "", false
@@ -177,7 +192,7 @@ func (h *AuthHandler) register(conn net.Conn) (string, bool) {
 		return "", false
 	}
 	query = "INSERT INTO `user` (`username`, `password`) VALUES (?,?);"
-	_, err = h.db.Exec(query, regInfo.Username, passwdHash)
+	_, err = h.db.ExecContext(ctx, query, regInfo.Username, passwdHash)
 	if err != nil {
 		return "", false
 	}

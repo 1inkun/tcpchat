@@ -12,7 +12,7 @@ import (
 
 func main() {
 	cfg := config.InitConfig()
-	// log.Println(cfg)
+	log.Println(cfg)
 
 	// 初始化数据库连接
 	sqlDb, err := db.InitDBConn(*cfg)
@@ -26,6 +26,7 @@ func main() {
 		log.Fatalf("redis初始化失败:%s", err)
 		return
 	}
+	defer rdb.Close()
 
 	ln, err := net.Listen("tcp", cfg.Server.PORT)
 	if err != nil {
@@ -36,16 +37,18 @@ func main() {
 
 	// 注册handler
 	authHandler := handler.NewAuthHandler(rdb, sqlDb)
+	banHandler := handler.NewBanHandler(rdb, sqlDb)
 
 	messages := make(chan models.Message)
-	go handler.Server(messages, *cfg)
+	go handler.Server(messages, *banHandler, *cfg)
 	// 处理连接
 	for {
 		conn, err := ln.Accept()
 		if err != nil {
 			log.Fatalf("服务器连接处理失败:%s", err)
 		}
+		// 检查是否被封禁
 		// 使用上下文包装conn
-		go handler.Client(conn, messages, *cfg, *authHandler)
+		go handler.Client(conn, messages, *cfg, *authHandler, *banHandler)
 	}
 }

@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"fmt"
 	"log"
 	"net"
 
@@ -9,9 +10,18 @@ import (
 	"github.com/1inkun/tcpchat/internal/utils"
 )
 
-func Client(conn net.Conn, messages chan models.Message, cfg config.Config, auth AuthHandler) {
-	// 先检查授权状态
-	username, ok := auth.Auth(conn)
+func Client(conn net.Conn, messages chan models.Message, cfg config.Config, auth AuthHandler, ban BanHandler) {
+	// 先检查当前IP是否被封禁
+	if bandTime, ok := ban.Check(conn, cfg); !ok {
+		// 未通过授权直接断开连接
+		log.Printf("%s 已被封禁", utils.SensMsg(conn, cfg))
+		resp := fmt.Sprintf("当前IP已被封禁! 将于%s解封!\n", bandTime)
+		conn.Write([]byte(resp))
+		conn.Close()
+		return
+	}
+	// 检查授权状态
+	username, ok := auth.Auth(conn, ban, cfg)
 	if !ok {
 		// 未通过授权直接断开连接
 		log.Printf("%s 未通过授权", utils.SensMsg(conn, cfg))

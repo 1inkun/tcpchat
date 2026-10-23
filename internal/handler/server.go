@@ -10,7 +10,7 @@ import (
 	"github.com/1inkun/tcpchat/internal/utils"
 )
 
-func Server(message chan models.Message, cfg config.Config) {
+func Server(message chan models.Message, ban BanHandler, cfg config.Config) {
 	// conns := map[string]net.Conn{}
 	clients := map[string]models.Client{}
 	for {
@@ -42,6 +42,7 @@ func Server(message chan models.Message, cfg config.Config) {
 			now := time.Now()
 			addr := msg.Conn.RemoteAddr().String()
 			if now.Sub(clients[addr].LastMessage).Seconds() >= float64(cfg.Server.TIMEWINDOW) {
+				// 成功发送消息
 				log.Printf("来自%s的新消息:%s", utils.SensMsg(msg.Conn, cfg), msg.Text)
 				// 更新发送消息用户的信息
 				newClient := models.Client{
@@ -63,11 +64,11 @@ func Server(message chan models.Message, cfg config.Config) {
 						n, err := client.Conn.Write([]byte(text))
 						if err != nil {
 							log.Printf("向客户端发送消息失败:%s", err)
-							return
+							break
 						}
 						if n < len(msg.Text) {
 							log.Println("向客户端发送消息时出现错误")
-							return
+							break
 						}
 					}
 				}()
@@ -79,14 +80,19 @@ func Server(message chan models.Message, cfg config.Config) {
 				_, err := clientInfo.Conn.Write([]byte(msg))
 				if err != nil {
 					log.Println("向客户端发送消息时出错")
-					return
+					continue
 				}
 
-				// 对多次爆破服务器的IP实施封禁,封禁名单由Redis维护
+				// TODO: 对多次爆破服务器的IP实施封禁,封禁名单由Redis维护
 				clientInfo.StrikCount++
 				if clientInfo.StrikCount >= cfg.Server.MSGLIMIT {
 					// 攻击服务器大于两秒八次直接草飞
-					clientInfo.Conn.Write([]byte("请停止攻击服务器!"))
+					if banTime, ok := ban.GetBaned(clientInfo.Conn, cfg); ok {
+						resp := fmt.Sprintf("你已被封禁!将于%s解封\n", banTime)
+						clientInfo.Conn.Write([]byte(resp))
+						clientInfo.Conn.Close()
+					}
+					clientInfo.Conn.Write([]byte("请停止攻击服务器!\n"))
 					clientInfo.Conn.Close()
 				}
 				clients[addr] = clientInfo
